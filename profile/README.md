@@ -8,6 +8,7 @@
   - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
   - [🚨 Issue 4: Architectural Leakage (DTO acting as Database Entity)](#-issue-4-architectural-leakage-dto-acting-as-database-entity)
   - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
+  - [🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)](#-issue-6-github-actions-workflow-failure-invalid-yaml-syntax-via-hidden-tab-characters)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -61,7 +62,7 @@ Fix: Removed the @Entity definition completely to preserve architectural boundar
   2. Consolidated local DNS mappings inside the Mac workstation `/etc/hosts` file to resolve the new unified app tier smoothly:
 ```text
      192.168.237.133   apps-01
-     ```
+```
 
 ---
 
