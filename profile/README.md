@@ -7,6 +7,7 @@
   - [🚨 Issue 2: Primary Key Generation Mismatch in In-Memory Database (H2)](#-issue-2-primary-key-generation-mismatch-in-in-memory-database-h2)
   - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
   - [🚨 Issue 4: Architectural Leakage (DTO acting as Database Entity)](#-issue-4-architectural-leakage-dto-acting-as-database-entity)
+  - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -49,5 +50,33 @@ Fix: Escaped single quotes using standard SQL duplicate single quotes (''):
 Symptom: Hibernate automatically generated an unwanted question_wrapper table in the database schema.
 Root Cause: The QuestionWrapper class was marked with @Entity, turning a data transport object into a persistence object.
 Fix: Removed the @Entity definition completely to preserve architectural boundaries. DTOs are now strictly models for API communication.
+
+---
+
+### 🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)
+* **Symptom:** Updates pushed to the microservice repository needed to cleanly target a newly designated, generic application host (`apps-01`) instead of an isolated, service-specific VM alias.
+* **Root Cause:** Hardcoded CI/CD variables and local resolution configurations tied deployment execution and testing tools to specific single-purpose hostnames (`question-service-01`).
+* **Fix:** Abstracted the network footprint across both local development and remote deployment stages:
+  1. Updated the environment-wide `VM_HOST` runner variable under the GitHub Actions secrets configuration panel (`/settings/variables/actions`).
+  2. Consolidated local DNS mappings inside the Mac workstation `/etc/hosts` file to resolve the new unified app tier smoothly:
+```text
+     192.168.237.133   apps-01
+     ```
+
+---
+
+### 🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)
+* **Symptom:** Pushing pipeline updates resulted in an immediate workflow rejection under GitHub Actions with the error: `Invalid workflow file: You have an error in your yaml syntax on line 44`.
+* **Root Cause:** While introducing the deployment `docker pull` sequence, a hidden `Tab` character or irregular indentation block crept into the text block. Because the YAML specification strictly forbids tab characters for nested indentation, the GitHub Actions parser failed to compile the workflow structure.
+* **Fix:** Utilized native terminal debugging utilities to audit and correct the formatting locally on the Mac runner before pushing:
+  1. Exited standard text mode in `vim` and executed the following commands to instantly expose invisible spacing, layout endings, and tab configurations (`^I` sequences):
+     ```vim
+     :set list
+     :set listchars=tab:▸\ ,trail:·
+     ```
+  2. Created a local pre-flight automation validation step using Python's native parsing framework to ensure structural integrity prior to standard Git commits:
+     ```bash
+     python3 -c "import yaml, sys; yaml.safe_load(sys.stdin)" < .github/workflows/deploy.yml
+     ```
 
 
