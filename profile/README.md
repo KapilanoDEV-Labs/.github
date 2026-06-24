@@ -14,11 +14,204 @@
 
 ## 🛠 Engineering Journal: Architecture & Deployment Runbook
 
+This project aims to create demo microservices. The original monolithic codebase relied on local ports on a single machine. I levelled up the design to a true production-style distribution across independent VMs! Doing this forces me to handle real-world challenges like network routing, distinct hostnames, and decoupled security layers.
+When adding Spring Security to this decoupled topology, the architectural golden rule is to centralize authentication at the API Gateway and use JWT (JSON Web Tokens) to pass the user's identity securely to downstream services (like Feign and Product).
+
 This section documents systemic challenges encountered during the orchestration of our Spring Boot microservices, Docker networking, and local CI/CD runners, along with their permanent resolutions.
 
 Setting up a global documentation repo like this turns a messy troubleshooting session into a production-grade internal corporate wiki.
 
+### **1. The Logical Target Architecture**
+   Every VM in our environment has a precise, single responsibility. External requests never hit your Product or Feign VMs directly; they must pass through the edge gateway.
+
+   **Topology Breakdown**
+
+   1. The Client: Sends an HTTP login request to the API Gateway.
+   2. API Gateway VM (api-gateway-01): Intercepts the request. It holds the Spring Security configuration, validates login credentials, and issues a signed JWT. For subsequent resource requests, it verifies the incoming token.
+   3. Eureka Server VM (eureka-server-01): Acts as the service registry. The Gateway, Feign Client, and Product services all register their current IP/hostname here so they can look each other up dynamically.
+   4. Feign Service VM (feign-client-01): A downstream consumer service. When it needs data from the Product service, it asks Eureka for Product's current VM IP and makes a clean, declarative REST call.
+   5. Product Service VM (product-service-01): The core resource microservice managing product logic and database persistence.
+
+### **2. Roadmap: Path to Destination**
+
+   To avoid pulling your hair out over networking and authorization bugs at the same time, split your implementation into **four distinct phases**.
+   
+**Phase 1: Establish the Multi-VM Foundation**
+   Before writing any new code, deploy your independent virtual machines in VMware Fusion and get them communicating natively over the subnet (192.168.237.x).
+   - Spin up your 4 nodes: eureka-server-01, api-gateway-01, feign-client-01, and product-service-01.
+   - Manually update the /etc/hosts file on every machine so they can ping one another by hostname instead of raw IPs.
+   
+**Phase 2: Deploy and Verify Registration**
+   Migrate the code you wrote during the Telusko course onto the individual VMs.
+   - Spin up your Eureka Server application first.
+   - Deploy your API Gateway, Feign Client, and Product services. Ensure that their application.yml or application.properties files point explicitly to the remote Eureka VM:
+     
+```yaml
+eureka:
+     client:
+     service-url:
+     defaultZone: http://eureka-server-01:8761/eureka/
+     instance:
+     prefer-ip-address: true
+```
+- Open your browser, navigate to http://192.168.237.130:8761, and verify that all 3 client applications show up green in the Eureka dashboard.
+
+**Phase 3: Implement Routed Communication**
+Verify that the services can talk across the physical network barrier.
+- Test your API Gateway routing rules. A request to http://<gateway-ip>:<port>/products should successfully jump through the gateway to the Product VM.
+- Test Feign. Ensure the Feign client successfully queries Eureka to resolve the Product VM's IP address and pulls back data.
+
+**Phase 4: Layers of Spring Security & JWT**
+Now that your pipelines are stable, lock down the environment using Spring Security.
+
+1. Gateway Authenticator: Add spring-boot-starter-security to your API Gateway. Configure a login endpoint that utilizes a database or an in-memory user manager to generate a JWT when authentication succeeds.
+2. Gateway Filter: Write a global GatewayFilter that intercepts all incoming API requests to check for a valid Authorization: Bearer <JWT> header.
+3. Downstream Token Relay (Feign Interceptor): If a user calls the Feign microservice, Feign must pass that JWT down to the Product service. You will write a RequestInterceptor bean inside your Feign application to automatically copy the JWT from the current incoming request context and inject it into the outgoing OpenFeign call header.
+4. Resource Validation: Secure the Product service so that it rejects any incoming traffic that lacks a valid token signature.
 ---
+### **VMWare**
+
+When it comes to virtual virtualization, there is a huge difference between disk storage space and system memory (RAM).
+
+- **Where Spring Boot runs:** Your Java applications run entirely inside the VM's RAM. Since your VMs are already powered on, ESXi has already claimed and allocated all the memory swap files it needs.
+- **What your compiled code weighs:** A standard Spring Boot .jar file built from Telusko's tutorials is incredibly lightweight—usually only 30 MB to 60 MB total. Copying that small file onto your VM's internal storage won't even make a dent in your remaining space.
+Because a Thick Provisioned disk allocates the entire specified storage block immediately upon creation, ESXi is blocking you because the datastore doesn't have enough raw, unallocated gigabytes available right now.
+You can easily bypass this roadblock without resizing your datastore by switching the disk provisioning type to Thin Provisioning.
+
+For a dedicated microservice runner like this, 1. Photon Minimal is exactly what you want. It keeps the OS footprint extremely lightweight, fast-booting, and leaves all available RAM and CPU overhead completely free for your Spring Boot applications.
+
+#### Set the Static IP in Photon OS (After Boot)
+
+Once you are booted up and logged into your new feign-client-01 VM as root, you can configure your static network configuration manually in less than a minute.
+Photon OS uses systemd-networkd to handle its interfaces.
+1. Open the network configuration file:
+
+```terminaloutput
+$ sudo vim /etc/systemd/network/10-static-en.network
+[Match]
+Name=eth0
+
+[Network]
+Address=192.168.237.133/24
+Gateway=192.168.237.2
+DNS=8.8.8.8
+DNS=8.8.4.4
+
+$ sudo systemctl restart systemd-networkd
+```
+
+### **CI/CD Pipeline**
+
+This is the absolute perfect playground for a CI/CD pipeline.
+
+Manually compiling a Java project, opening a terminal, SFTP-ing a .jar file over to Photon OS, killing the old process, and running the new one gets old incredibly fast. Automating this means you just hit git push, and a few seconds later your code is live on your ESXi cluster.
+
+Since your datastore is practically out of room (864 MB left), we can’t install a heavy automation server like Jenkins inside your VMs. Instead, we can use a lightweight cloud-to-local hybrid pipeline that costs you 0 MB of server storage.
+
+The Minimalist CI/CD Blueprint:
+
+```textmate
+[ Your IDE ] ---> [ GitHub Repository ] ---> [ GitHub Actions Runner ] ---> [ Photon OS VM ]
+ (Code Changes)       (git push main)         (Builds .jar & SSH deploys)     (Runs App)
+```
+1. **The Continuous Integration (CI) Stage**
+
+   Instead of building the project on your laptop or on your tight ESXi storage, you let GitHub's cloud servers do the heavy lifting for free.
+   - You push your Spring Boot code to a private GitHub repository.
+   - A GitHub Actions workflow triggers automatically.
+   - It spins up a temporary cloud container, sets up JDK, and compiles your code using Maven/Gradle:
+```terminaloutput
+   mvn clean package -DskipTests
+````
+
+2. **The Continuous Deployment (CD) Stage**
+
+   Once the cloud runner successfully builds your fresh JAR file, it securely pushes it down to your lab node.
+   - The runner uses an SSH Action to securely connect to your Photon OS VM (192.168.237.130).
+   - It drops the new .jar file directly into your amit user home directory.
+   - It runs a quick bash script on the VM to stop the old running app and fire up the new one in the background:
+
+```terminaloutput
+# Example background execution
+nohup java -jar eureka-server.jar > app.log 2>&1 &
+``` 
+
+3. **How to Bridge the Network Gap (Crucial Detail)**
+
+- Because your ESXi lab is running on local private IPs (192.168.237.x), GitHub's cloud servers won't be able to see them out of the box. Your laptop will act as the "coordinator" that pulls the code from GitHub, compiles it, and securely pushes the final .jar file directly over your local Wi-Fi to your Photon VMs.
+- The Self-Hosted Runner (Recommended for low storage): You can download a tiny, lightweight GitHub Agent script directly onto your laptop. Your laptop acts as the worker bridge. It listens for GitHub commands, runs the build locally, and copies the file across your local VMware network to your Photon servers.
+- **Set Up the SSH Target on Photon OS**
+       Let the runner deploy files automatically without prompting for passwords. Configure SSH key authentication for non-root user.
+       On the Mac, generate an SSH key pair and copy it to the target VM:
+```terminaloutput
+# Run this on your local laptop terminal
+ssh-keygen -t ed25519 -b 4096 -f ~/.ssh/id_rsa_lab
+
+# Copy the public key over to the VM
+ssh-copy-id -i ~/.ssh/id_rsa_lab.pub user@<VM_HOST>
+```
+- **Create Your GitHub Actions Workflow File**
+  Inside your Spring Boot project repository on your laptop, create a folder structure named .github/workflows/ and add a configuration file named deploy.yml.
+```yaml
+name: Build and Deploy Question Service
+
+on:
+  push:
+    branches: [ "main" ]
+
+env:
+  DOCKER_API_VERSION: "1.41"
+
+jobs:
+  build-and-push:
+    runs-on: self-hosted
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Build Project JAR with Maven
+      run: ./mvnw clean package -DskipTests
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and Push Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: true
+        tags: ${{ secrets.DOCKERHUB_USERNAME }}/question-service:latest
+
+  deploy:
+    runs-on: self-hosted
+    needs: build-and-push
+    steps:
+    - name: SSH and Run Application Container
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ vars.VM_USER }}@${{ vars.VM_HOST }} << 'EOF'
+          # Login to Docker Hub inside the VM
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          
+          # Tear down any running instance smoothly
+          docker stop question-container || true
+          docker rm question-container || true
+
+          # Force the VM to fetch the newest image from Docker Hub
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/question-service:latest
+          
+          # Spin up the fresh container on Host Port 8082 mapping cleanly to internal 8080
+          docker run -d --name question-container -p 8082:8080 --restart always ${{ secrets.DOCKERHUB_USERNAME }}/question-service:latest
+        EOF
+```
 
 ### 🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)
 * **Symptom:** Microservice crashed on startup with a `Table "QUESTION" not found` error during the data seeding phase, even though `ddl-auto=update` or `create` was active.
