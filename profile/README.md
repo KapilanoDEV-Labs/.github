@@ -51,6 +51,7 @@ Setting up a global documentation repo like this turns a messy troubleshooting s
 spring.application.name=service-registry
 server.port=8761
 
+# When your other microservices register with Eureka, it will advertise its location using this hostname
 eureka.instance.hostname=eureka-server-01
 eureka.client.fetch-registry=false
 eureka.client.register-with-eureka=false
