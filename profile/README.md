@@ -3,12 +3,18 @@
 **Table of Contents**  *generated with [DocToc](https://github.com/thlorenz/doctoc)*
 
 - [🛠 Engineering Journal: Architecture & Deployment Runbook](#-engineering-journal-architecture--deployment-runbook)
+  - [**1. The Logical Target Architecture**](#1-the-logical-target-architecture)
+  - [**2. Roadmap: Path to Destination**](#2-roadmap-path-to-destination)
+  - [**VMWare**](#vmware)
+    - [Set the Static IP in Photon OS (After Boot)](#set-the-static-ip-in-photon-os-after-boot)
+  - [**CI/CD Pipeline**](#cicd-pipeline)
   - [🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)](#-issue-1-race-condition-on-db-initialization-datasql-executing-before-hibernate-schema-creation)
   - [🚨 Issue 2: Primary Key Generation Mismatch in In-Memory Database (H2)](#-issue-2-primary-key-generation-mismatch-in-in-memory-database-h2)
   - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
   - [🚨 Issue 4: Architectural Leakage (DTO acting as Database Entity)](#-issue-4-architectural-leakage-dto-acting-as-database-entity)
   - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
   - [🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)](#-issue-6-github-actions-workflow-failure-invalid-yaml-syntax-via-hidden-tab-characters)
+  - [🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)](#-issue-7-service-registry-environment-provisioning-photon-os-network--docker-tailoring)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
