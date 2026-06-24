@@ -15,6 +15,7 @@
   - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
   - [🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)](#-issue-6-github-actions-workflow-failure-invalid-yaml-syntax-via-hidden-tab-characters)
   - [🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)](#-issue-7-service-registry-environment-provisioning-photon-os-network--docker-tailoring)
+  - [🚨 Issue 8: CI/CD Pipeline Adaptation (Reconfiguring Deployment Matrix for Service Registry)](#-issue-8-cicd-pipeline-adaptation-reconfiguring-deployment-matrix-for-service-registry)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -283,8 +284,6 @@ Fix: Removed the @Entity definition completely to preserve architectural boundar
 
 ---
 
----
-
 ### 🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)
 * **Symptom:** The newly provisioned host `eureka-server-01` lacked an operational container runtime environment, rejected non-root docker operations, and dropped outbound packet verification to public registries.
 * **Root Cause:** 1. The OS runtime environment was identified as VMware Photon OS (utilizing `tdnf` instead of `apt-get`), where the pre-installed Docker daemon was dormant.
@@ -313,4 +312,24 @@ Fix: Removed the @Entity definition completely to preserve architectural boundar
      DNS=8.8.8.8
      DNS=8.8.4.4
      ```
+---
 
+---
+
+### 🚨 Issue 8: CI/CD Pipeline Adaptation (Reconfiguring Deployment Matrix for Service Registry)
+* **Symptom:** The infrastructure needed an automated compilation and deployment sequence to provision the Eureka Server container smoothly onto the newly isolated `eureka-server-01` node without manual host interventions.
+* **Root Cause:** The existing template was strictly configured to target the `question-service` lifecycle parameters, which bounded image tags, runtime identifiers, container namespaces, and host routing definitions (`8082->8080`) to the functional domain layer.
+* **Fix:** Adapted the pipeline design patterns in `/Users/amitkapila/dev/java/Telusko/service-registry/.github/workflows/deploy.yml` to reflect infrastructure requirements:
+    1. **Refactored Artifact Target Tracking:** Retargeted the Docker build and pull mechanisms to reference the service infrastructure namespace:
+       ```yaml
+       tags: ${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest
+       ```
+    2. **Isolated Container Lifetime Management:** Swapped out the runtime context references to isolate and prevent overlapping container management errors:
+       ```bash
+       docker stop service-registry-container || true
+       docker rm service-registry-container || true
+       ```
+    3. **Aligned Infrastructure Routing Topology:** Adjusted the host-to-container network bridge configuration mappings to expose the Eureka web dash interface uniformly on its native backbone port (`8761:8761` instead of app-tier defaults):
+       ```yaml
+       docker run -d --name service-registry-container -p 8761:8761 --restart always ${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest
+       ```
