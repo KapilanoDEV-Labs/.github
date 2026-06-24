@@ -275,4 +275,36 @@ Fix: Removed the @Entity definition completely to preserve architectural boundar
      python3 -c "import yaml, sys; yaml.safe_load(sys.stdin)" < .github/workflows/deploy.yml
      ```
 
+---
+
+---
+
+### 🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)
+* **Symptom:** The newly provisioned host `eureka-server-01` lacked an operational container runtime environment, rejected non-root docker operations, and dropped outbound packet verification to public registries.
+* **Root Cause:** 1. The OS runtime environment was identified as VMware Photon OS (utilizing `tdnf` instead of `apt-get`), where the pre-installed Docker daemon was dormant.
+  2. The user account lacked an active, refreshed group association session to target the `/var/run/docker.sock` communication layer.
+  3. Dynamic network configurations (`50-dhcp-en.network`) conflicted with lab routing architecture requirements.
+* **Fix:** Structured the OS administration layer, authorized access privileges, and applied a declarative static network profile:
+  1. **Activated & Persisted the Daemon:** Enabled and initiated the local systemd daemon layout management tier:
+     ```bash
+     sudo systemctl start docker
+     sudo systemctl enable docker
+     sudo usermod -aG docker amit
+     # Note: Log out and log back in to apply group privileges cleanly
+     ```
+  2. **Configured Static Network Profile:** Transformed the configuration fallback structure from dynamic DHCP over to an immutable network layout profile inside `systemd-networkd`:
+     ```bash
+     sudo mv /etc/systemd/network/50-dhcp-en.network /etc/systemd/network/10-static-en.network
+     ```
+  3. **Declared System Networking Footprint:** Populated `/etc/systemd/network/10-static-en.network` with the designated lab IP framework:
+     ```text
+     [Match]
+     Name=eth0
+
+     [Network]
+     Address=192.168.237.130/24
+     Gateway=192.168.237.2
+     DNS=8.8.8.8
+     DNS=8.8.4.4
+     ```
 
