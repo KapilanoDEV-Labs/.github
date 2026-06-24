@@ -43,16 +43,17 @@ Setting up a global documentation repo like this turns a messy troubleshooting s
    
 **Phase 2: Deploy and Verify Registration**
    Migrate the code you wrote during the Telusko course onto the individual VMs.
+   - Update spring.application.name. Recommendation: Change the dot (.) to a hyphen (-). When other microservices look up or register with Eureka, or when the API Gateway routes load-balanced traffic later using standard service IDs (e.g., lb://service-registry), dot notations can sometimes cause parsing issues or hostname resolution conflicts in Spring Cloud discovery clients. Using a hyphen is the standard convention.
    - Spin up your Eureka Server application first.
-   - Deploy your API Gateway, Feign Client, and Product services. Ensure that their application.yml or application.properties files point explicitly to the remote Eureka VM:
+   - Deploy your API Gateway, Feign Client, and Product services. Ensure that their application.properties files point explicitly to the remote Eureka VM:
      
-```yaml
-eureka:
-     client:
-     service-url:
-     defaultZone: http://eureka-server-01:8761/eureka/
-     instance:
-     prefer-ip-address: true
+```text
+spring.application.name=service-registry
+server.port=8761
+
+eureka.instance.hostname=eureka-server-01
+eureka.client.fetch-registry=false
+eureka.client.register-with-eureka=false
 ```
 - Open your browser, navigate to http://192.168.237.130:8761, and verify that all 3 client applications show up green in the Eureka dashboard.
 
