@@ -162,20 +162,6 @@ Because this build sequence happens natively on your host machine via the self-h
 **Shipping to the Cloud Registry:**
 After assembly, the runner uploads the finalized container image layers over a secure pipeline up to **Docker Hub** (the global, managed Docker registry on the cloud), applying the official tag: `${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest`.
 
-1. When code is pushed to the `main` branch of the `service-registry` repository, GitHub's central orchestration engine evaluates your organization's designated runner group cluster, which can be viewed under the organisation's `settings -> Code, planning, and automation -> Actions -> Runner Groups`.
-2. The platform matches the `runs-on: self-hosted` (within the `service-registry/.github/workflows/deploy.yml`) criteria and delegates the execution load directly to the background runner daemon operating on your Mac workstation.
-3. Your local workstation handles the compilation lifecycle safely inside its native workspace:
-    * Checks out the latest source files.
-    * Provisions a clean `eclipse-temurin` JDK 17 environment.
-    * Compiles and packages the application binary artifact:
-      ```bash
-      ./mvnw clean package -DskipTests
-      ```
-4. The Mac runner communicates with the active local Docker daemon to build the container layer using your custom multi-stage `Dockerfile`, then pushes the immutable image tag up to your central cloud repository:
-   ```bash
-   # Built image target tracking
-   tags: ${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest
-
 ### B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout
 Once the compilation runner finishes pushing the fresh system layer to Docker Hub, the automated deployment stage initiates to pivot your infrastructure safely:
 
