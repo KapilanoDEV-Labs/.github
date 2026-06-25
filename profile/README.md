@@ -6,22 +6,22 @@
   - [**1. The Logical Target Architecture**](#1-the-logical-target-architecture)
   - [**2. Roadmap: Path to Destination**](#2-roadmap-path-to-destination)
   - [**VMWare**](#vmware)
-    - [Set the Static IP in Photon OS (After Boot)](#set-the-static-ip-in-photon-os-after-boot)
-  - [🖥️ + ☁️ + 🛰️ **CI/CD Pipeline**](#-----cicd-pipeline)
-  - [A. 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Workstation Execution](#a--continuous-integration-ci-stage-local-self-hosted-workstation-execution)
-  - [B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout](#b-continuous-deployment-cd-stage-cloud-registry-to-automated-host-rollout)
-  - [🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)](#-issue-1-race-condition-on-db-initialization-datasql-executing-before-hibernate-schema-creation)
-  - [🚨 Issue 2: Primary Key Generation Mismatch in In-Memory Database (H2)](#-issue-2-primary-key-generation-mismatch-in-in-memory-database-h2)
-  - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
-  - [🚨 Issue 4: Architectural Leakage (DTO acting as Database Entity)](#-issue-4-architectural-leakage-dto-acting-as-database-entity)
-  - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
-  - [🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)](#-issue-6-github-actions-workflow-failure-invalid-yaml-syntax-via-hidden-tab-characters)
-  - [🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)](#-issue-7-service-registry-environment-provisioning-photon-os-network--docker-tailoring)
-  - [🚨 Issue 8: CI/CD Pipeline Adaptation (Reconfiguring Deployment Matrix for Service Registry)](#-issue-8-cicd-pipeline-adaptation-reconfiguring-deployment-matrix-for-service-registry)
+      - [Set the Static IP in Photon OS (After Boot)](#set-the-static-ip-in-photon-os-after-boot)
+  - [🖥️ + ☁️ + 🛰️ CI/CD Pipeline](#-----cicd-pipeline)
+    - [A. 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Workstation Execution](#a--continuous-integration-ci-stage-local-self-hosted-workstation-execution)
+    - [B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout](#b-continuous-deployment-cd-stage-cloud-registry-to-automated-host-rollout)
+    - [🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)](#-issue-1-race-condition-on-db-initialization-datasql-executing-before-hibernate-schema-creation)
+    - [🚨 Issue 2: Primary Key Generation Mismatch in In-Memory Database (H2)](#-issue-2-primary-key-generation-mismatch-in-in-memory-database-h2)
+    - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
+    - [🚨 Issue 4: Architectural Leakage (DTO acting as Database Entity)](#-issue-4-architectural-leakage-dto-acting-as-database-entity)
+    - [🚨 Issue 5: Infrastructure Transition (Migrating Deployment Target to Consolidated App Host)](#-issue-5-infrastructure-transition-migrating-deployment-target-to-consolidated-app-host)
+    - [🚨 Issue 6: GitHub Actions Workflow Failure (Invalid YAML Syntax via Hidden Tab Characters)](#-issue-6-github-actions-workflow-failure-invalid-yaml-syntax-via-hidden-tab-characters)
+    - [🚨 Issue 7: Service Registry Environment Provisioning (Photon OS Network & Docker Tailoring)](#-issue-7-service-registry-environment-provisioning-photon-os-network--docker-tailoring)
+    - [🚨 Issue 8: CI/CD Pipeline Adaptation (Reconfiguring Deployment Matrix for Service Registry)](#-issue-8-cicd-pipeline-adaptation-reconfiguring-deployment-matrix-for-service-registry)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-## 🛠 Engineering Journal: Architecture & Deployment Runbook
+# 🛠 Engineering Journal: Architecture & Deployment Runbook
 
 This project aims to create demo microservices. The original monolithic codebase relied on local ports on a single machine. I levelled up the design to a true production-style distribution across independent VMs! Doing this forces me to handle real-world challenges like network routing, distinct hostnames, and decoupled security layers.
 When adding Spring Security to this decoupled topology, the architectural golden rule is to centralize authentication at the API Gateway and use JWT (JSON Web Tokens) to pass the user's identity securely to downstream services (like Feign and Product).
@@ -30,7 +30,7 @@ This section documents systemic challenges encountered during the orchestration 
 
 Setting up a global documentation repo like this turns a messy troubleshooting session into a production-grade internal corporate wiki.
 
-### **1. The Logical Target Architecture**
+## **1. The Logical Target Architecture**
    Every VM in our environment has a precise, single responsibility. External requests never hit your Product or Feign VMs directly; they must pass through the edge gateway.
 
    **Topology Breakdown**
@@ -41,7 +41,7 @@ Setting up a global documentation repo like this turns a messy troubleshooting s
    4. Feign Service VM (feign-client-01): A downstream consumer service. When it needs data from the Product service, it asks Eureka for Product's current VM IP and makes a clean, declarative REST call.
    5. Product Service VM (product-service-01): The core resource microservice managing product logic and database persistence.
 
-### **2. Roadmap: Path to Destination**
+## **2. Roadmap: Path to Destination**
 
    To avoid pulling your hair out over networking and authorization bugs at the same time, split your implementation into **four distinct phases**.
    
@@ -80,7 +80,7 @@ Now that your pipelines are stable, lock down the environment using Spring Secur
 3. Downstream Token Relay (Feign Interceptor): If a user calls the Feign microservice, Feign must pass that JWT down to the Product service. You will write a RequestInterceptor bean inside your Feign application to automatically copy the JWT from the current incoming request context and inject it into the outgoing OpenFeign call header.
 4. Resource Validation: Secure the Product service so that it rejects any incoming traffic that lacks a valid token signature.
 ---
-### **VMWare**
+## **VMWare**
 
 When it comes to virtual virtualization, there is a huge difference between disk storage space and system memory (RAM).
 
@@ -111,7 +111,7 @@ DNS=8.8.4.4
 $ sudo systemctl restart systemd-networkd
 ```
 
-### 🖥️ + ☁️ + 🛰️ **CI/CD Pipeline**
+## 🖥️ + ☁️ + 🛰️ CI/CD Pipeline
 
 This is the absolute perfect playground for a CI/CD pipeline.
 
