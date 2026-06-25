@@ -7,7 +7,7 @@
   - [**2. Roadmap: Path to Destination**](#2-roadmap-path-to-destination)
   - [**VMWare**](#vmware)
       - [Set the Static IP in Photon OS (After Boot)](#set-the-static-ip-in-photon-os-after-boot)
-  - [🖥️ + ☁️ + 🛰️ CI/CD Pipeline](#-----cicd-pipeline)
+  - [CI/CD Pipeline 🖥️ + ☁️ + 🛰️](#cicd-pipeline-----)
     - [A. 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Workstation Execution](#a--continuous-integration-ci-stage-local-self-hosted-workstation-execution)
     - [B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout](#b-continuous-deployment-cd-stage-cloud-registry-to-automated-host-rollout)
     - [🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)](#-issue-1-race-condition-on-db-initialization-datasql-executing-before-hibernate-schema-creation)
@@ -111,7 +111,7 @@ DNS=8.8.4.4
 $ sudo systemctl restart systemd-networkd
 ```
 
-## 🖥️ + ☁️ + 🛰️ CI/CD Pipeline
+##  CI/CD Pipeline 🖥️ + ☁️ + 🛰️
 
 This is the absolute perfect playground for a CI/CD pipeline.
 
