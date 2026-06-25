@@ -7,7 +7,9 @@
   - [**2. Roadmap: Path to Destination**](#2-roadmap-path-to-destination)
   - [**VMWare**](#vmware)
     - [Set the Static IP in Photon OS (After Boot)](#set-the-static-ip-in-photon-os-after-boot)
-  - [**CI/CD Pipeline**](#cicd-pipeline)
+  - [🖥️ + ☁️ + 🛰️ **CI/CD Pipeline**](#-----cicd-pipeline)
+  - [A. 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Workstation Execution](#a--continuous-integration-ci-stage-local-self-hosted-workstation-execution)
+  - [B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout](#b-continuous-deployment-cd-stage-cloud-registry-to-automated-host-rollout)
   - [🚨 Issue 1: Race Condition on DB Initialization (data.sql executing before Hibernate schema creation)](#-issue-1-race-condition-on-db-initialization-datasql-executing-before-hibernate-schema-creation)
   - [🚨 Issue 2: Primary Key Generation Mismatch in In-Memory Database (H2)](#-issue-2-primary-key-generation-mismatch-in-in-memory-database-h2)
   - [🚨 Issue 3: SQL Syntax Errors on Special Characters (Python Decorator Seed)](#-issue-3-sql-syntax-errors-on-special-characters-python-decorator-seed)
@@ -109,7 +111,7 @@ DNS=8.8.4.4
 $ sudo systemctl restart systemd-networkd
 ```
 
-### **CI/CD Pipeline**
+### 🖥️ + ☁️ + 🛰️ **CI/CD Pipeline**
 
 This is the absolute perfect playground for a CI/CD pipeline.
 
@@ -123,10 +125,45 @@ The Minimalist CI/CD Blueprint:
 [ Your IDE ] ---> [ GitHub Repository ] ---> [ GitHub Actions Runner ] ---> [ Photon OS VM ]
  (Code Changes)       (git push main)         (Builds .jar & SSH deploys)     (Runs App)
 ```
-1. ### 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Execution Pool
+### A. 🚀 Continuous Integration (CI) Stage: Local Self-Hosted Workstation Execution
+
+
+
 Instead of consuming standard cloud-hosted runners or overloading your ESXi hypervisor storage layers, this pipeline leverages an on-premise, self-hosted processing strategy:
-1. When code is pushed to the `main` branch of the `service-registry` repository, GitHub's central orchestration engine evaluates your organization's designated runner group cluster (`runner-groups/1`).
-2. The platform matches the `runs-on: self-hosted` criteria and delegates the execution load directly to the background runner daemon operating on your Mac workstation.
+
+**The Runner Core Listening Daemon:**
+Inside `/Users/amitkapila/central-runner`, a background service script (`svc.sh` running `runsvc.sh` and `run.sh`) maintains an active, long-polling connection between your iMac and the GitHub organization runner group (`settings -> Code, planning, and automation -> Actions -> Runner Groups`).
+* When a code commit is pushed, this daemon catches the event payload and initializes an isolated workspace directly inside the internal execution directory: `/Users/amitkapila/central-runner/_work/`.
+
+**Parsing the Pipeline Blueprints:**
+The runner reads your exact workflow orchestration file located at your repository root: `.github/workflows/deploy.yml`. This instructs the daemon to execute two key local phases:
+* **Artifact Compilation:** The runner triggers the native Maven wrapper script (`./mvnw`) checked out from your source files. It executes the packaging command:
+  ```bash
+  ./mvnw clean package -DskipTests
+  ```
+  This compiles the Java source code and compiles a fresh, standalone executable archive inside the local file tier at `target/*.jar`.
+
+**Runner & Dockerfile Interaction:**
+Once the JAR is verified, the runner transitions execution over to your local container virtualization layer (Docker Desktop / Colima). It references the context blueprint located at `Dockerfile`:
+   
+```dockerfile
+   FROM eclipse-temurin:17-jdk-alpine
+   EXPOSE 8761
+   COPY target/*.jar app.jar
+   ENTRYPOINT ["java","-jar","/app.jar"]
+```
+
+**The Interaction:**
+The runner instructs Docker to download the secure, minimal base runtime environment image specified by the `FROM` instruction (`eclipse-temurin:17-jdk-alpine`). It injects your compiled `target/*.jar` into the container framework as `app.jar`, exposing communications across port `8761`.
+
+**Local Visibility:**
+Because this build sequence happens natively on your host machine via the self-hosted engine, you can instantly see, inspect, and track these newly baked intermediate images and caching layers inside the **Docker Desktop GUI Application** on your Mac workstation.
+
+**Shipping to the Cloud Registry:**
+After assembly, the runner uploads the finalized container image layers over a secure pipeline up to **Docker Hub** (the global, managed Docker registry on the cloud), applying the official tag: `${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest`.
+
+1. When code is pushed to the `main` branch of the `service-registry` repository, GitHub's central orchestration engine evaluates your organization's designated runner group cluster, which can be viewed under the organisation's `settings -> Code, planning, and automation -> Actions -> Runner Groups`.
+2. The platform matches the `runs-on: self-hosted` (within the `service-registry/.github/workflows/deploy.yml`) criteria and delegates the execution load directly to the background runner daemon operating on your Mac workstation.
 3. Your local workstation handles the compilation lifecycle safely inside its native workspace:
     * Checks out the latest source files.
     * Provisions a clean `eclipse-temurin` JDK 17 environment.
@@ -139,19 +176,42 @@ Instead of consuming standard cloud-hosted runners or overloading your ESXi hype
    # Built image target tracking
    tags: ${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest
 
-2. **The Continuous Deployment (CD) Stage**
+### B. 🎛️Continuous Deployment (CD) Stage: Cloud Registry to Automated Host Rollout
+Once the compilation runner finishes pushing the fresh system layer to Docker Hub, the automated deployment stage initiates to pivot your infrastructure safely:
 
-   Once the cloud runner successfully builds your fresh JAR file, it securely pushes it down to your lab node.
-   - The runner uses an SSH Action to securely connect to your Photon OS VM (192.168.237.130).
-   - It drops the new .jar file directly into your amit user home directory.
-   - It runs a quick bash script on the VM to stop the old running app and fire up the new one in the background:
+**Target Infrastructure Path Resolution:**
 
-```terminaloutput
-# Example background execution
-nohup java -jar eureka-server.jar > app.log 2>&1 &
-``` 
+The self-hosted workstation runner loads your secure deployment context variables, extracting `VM_USER=amit` and `VM_HOST=eureka-server-01` directly from your repository panel (`/settings/variables/actions`).
+- It initiates a secure, non-interactive shell command framework (`ssh`) over your network. Your Mac resolves the arbitrary hostname alias `eureka-server-01` using its static local system map inside `/etc/hosts` to route directly to the target environment (`192.168.237.130`).
 
-3. **How to Bridge the Network Gap (Crucial Detail)**
+**Remote Container Lifecyle Management:**
+
+Operating directly inside the remote Photon OS virtual machine shell layer, the pipeline strings a rapid, declarative automation script to update the system engine state:
+- **Registry Handshake:** Authenticates the remote machine with the cloud registry by passing down your masked authorization token securely:
+
+```yaml
+echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+```
+
+- **Graceful Architecture Pull-Down:** 
+
+Safely halts and purges the active running instance to free up internal system sockets and prevent overlapping naming collisions:
+
+```yaml
+
+docker stop service-registry-container || true
+docker rm service-registry-container || true
+```
+
+- **Production Image Deployment:**
+
+Commands the host Docker engine to pull down the newly validated image layers straight from the **Docker Hub Cloud Registry** and boot the container as an isolated background system process, routing port mappings flawlessly:
+
+```yaml
+docker run -d --name service-registry-container -p 8761:8761 --restart always ${{ secrets.DOCKERHUB_USERNAME }}/service-registry:latest
+```
+
+C. **How to Bridge the Network Gap (Crucial Detail)**
 
 - Because your ESXi lab is running on local private IPs (192.168.237.x), GitHub's cloud servers won't be able to see them out of the box. Your laptop will act as the "coordinator" that pulls the code from GitHub, compiles it, and securely pushes the final .jar file directly over your local Wi-Fi to your Photon VMs.
 - The Self-Hosted Runner (Recommended for low storage): You can download a tiny, lightweight GitHub Agent script directly onto your laptop. Your laptop acts as the worker bridge. It listens for GitHub commands, runs the build locally, and copies the file across your local VMware network to your Photon servers.
