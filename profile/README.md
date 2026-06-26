@@ -65,7 +65,63 @@ eureka.instance.hostname=eureka-server-01
 eureka.client.fetch-registry=false
 eureka.client.register-with-eureka=false
 ```
+
+To transition the standalone service into a managed service discovery client, the following network discovery blocks were appended to `src/main/resources/application.properties`:
+
+```properties
+# ===================================================================
+# Eureka Discovery Client Engineering Space
+# ===================================================================
+# Establishes the downstream heartbeat endpoint targeting the registry core
+eureka.client.service-url.defaultZone=http://eureka-server-01:8761/eureka/
+
+# Instructs the runner to declare the host's actual network adapter IP
+# instead of an isolated, arbitrary internal Docker container hostname.
+eureka.instance.prefer-ip-address=true
+```
 - Open your browser, navigate to http://192.168.237.130:8761, and verify that all 3 client applications show up green in the Eureka dashboard.
+- The http://eureka-server-01:8761 page was not showing any instances registered with Eureka. On http://eureka-server-01:8761/ I see:
+
+`EMERGENCY! EUREKA MAY BE INCORRECTLY CLAIMING INSTANCES ARE UP WHEN THEY'RE NOT. RENEWALS ARE LESSER THAN THRESHOLD AND HENCE THE INSTANCES ARE NOT BEING EXPIRED JUST TO BE SAFE.`
+
+That scary red warning is an absolute rite of passage when setting up Eureka! Don't panic—your setup isn't broken. This is a built-in safety feature called Eureka Self-Preservation Mode, and it is completely normal to see it right now.
+Why is Eureka Panicking?
+Eureka expects every registered microservice instance to send a heartbeat ping every 30 seconds to say, "I'm still alive!"
+If Eureka suddenly stops receiving these heartbeats, it calculates a threshold. If the renewals drop below that threshold, Eureka assumes there is a network partition (i.e., the server's own network dropped, rather than all the microservices crashing at once). To be safe, it enters Self-Preservation Mode, which means it freezes its registry and refuses to evict or expire any instances until network stability returns.
+
+- The absolute best way to see why it isn't registering is to read the Spring Boot startup logs directly inside the target application container.
+SSH into your application host and look at the logs:
+
+```bash
+# SSH into your application host machine
+ssh amit@<your-question-service-vm-ip>
+
+# Inspect the live container logs
+amit@product-service-01 [ ~ ]$ docker logs --tail 100 -f question-container
+2026-06-26T13:52:13.542Z  WARN 1 --- [freshExecutor-0] c.n.d.s.t.d.RetryableEurekaHttpClient    : Request execution failed with message: I/O error on GET request for "http://eureka-server-01:8761/eureka/apps/": eureka-server-01
+2026-06-26T13:52:13.542Z  INFO 1 --- [freshExecutor-0] com.netflix.discovery.DiscoveryClient    : DiscoveryClient_QUESTION-SERVICE/dc5ebb03f5ac:question-service - was unable to refresh its cache! This periodic background refresh will be retried in 30 seconds. status = Cannot execute request on any known server stacktrace = com.netflix.discovery.shared.transport.TransportException: Cannot execute request on any known server
+
+```
+- **Connection Refused / Timeout Errors:** Look for exceptions like `DiscoveryClient_QUESTION-SERVICE - registration failed` or `Cannot execute request on any known server.`
+- **If you see connection errors:** It means the container cannot find or reach `http://eureka-server-01:8761/eureka/`.
+- The stack trace points exactly to the smoking gun:
+- 
+`Caused by: java.net.UnknownHostException: eureka-server-01`
+
+Even though you correctly updated `/etc/hosts` on your host machine (`product-service-01`), your Spring Boot application is running inside an isolated Docker container (dc5ebb03f5ac).
+
+- Because Docker bridge networks isolate container engines from their virtual machine hosts, the quiz and question container runtimes were blind to the arbitrary domain naming string eureka-server-01.
+- To patch this without standing up an enterprise DNS appliance, the --add-host flag was injected into the continuous deployment workflow sequence to append mapping vectors natively into the container's /etc/hosts file:
+
+Pipeline Infrastructure Extension (deploy.yml) inside the GitHub Actions CD Deployment block execution step:
+```yaml
+docker run -d \
+  --name question-container \
+  --add-host eureka-server-01:192.168.237.130 \ # This line was added
+  -p 8082:8080 \
+  --restart always \
+  ${{ secrets.DOCKERHUB_USERNAME }}/question-service:latest
+```
 
 **Phase 3: Implement Routed Communication**
 Verify that the services can talk across the physical network barrier.
@@ -134,6 +190,54 @@ Instead of consuming standard cloud-hosted runners or overloading your ESXi hype
 **The Runner Core Listening Daemon:**
 Inside `/Users/amitkapila/central-runner`, a background service script (`svc.sh` running `runsvc.sh` and `run.sh`) maintains an active, long-polling connection between your iMac and the GitHub organization runner group (`settings -> Code, planning, and automation -> Actions -> Runner Groups`).
 * When a code commit is pushed, this daemon catches the event payload and initializes an isolated workspace directly inside the internal execution directory: `/Users/amitkapila/central-runner/_work/`.
+* You can monitor active push activity & workloads.
+* To watch the runner actually process a job when you execute a git push, you can look inside the diagnostic directories or tail the live listener log
+* Whenever a push triggers a build, the runner writes detailed step-by-step diagnostic frames inside the _diag folder. You can view the current listener log by running:
+
+```
+/Users/amitkapila/central-runner % tail -f _diag/Runner_*.log
+```
+
+When you push code, you will instantly see lines scrolling by indicating that a new job has been accepted, a workspace directory inside _work/ is being initialized, and steps are executing.
+
+```
+[2026-06-25 01:06:22Z INFO Runner] Received Ctrl-C signal, stop Runner.Listener and Runner.Worker.
+[2026-06-25 01:06:22Z INFO HostContext] Runner will be shutdown for UserCancelled
+
+==> _diag/Runner_20260625-090514-utc.log <==
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+[2026-06-26 13:44:20Z ERR  BrokerServer] #####################################################
+[2026-06-26 13:44:20Z ERR  BrokerServer] System.Net.Sockets.SocketException (89): Operation canceled
+[2026-06-26 13:44:20Z WARN BrokerServer] Back off 7.371 seconds before next retry. 4 attempt left.
+[2026-06-26 13:44:20Z INFO BrokerMessageListener] Get next message has been cancelled.
+[2026-06-26 13:44:20Z INFO JobDispatcher] Shutting down JobDispatcher. Make sure all WorkerDispatcher has finished.
+[2026-06-26 13:44:20Z INFO JobDispatcher] Ensure WorkerDispatcher for job 0cfd1362-3202-54e6-af48-d3e41f00eed3 run to finish, cancel any running job.
+[2026-06-26 13:44:20Z INFO JobDispatcher] Job request 0cfd1362-3202-54e6-af48-d3e41f00eed3 processed succeed.
+[2026-06-26 13:44:20Z INFO Runner] Deleting Runner Session...
+[2026-06-26 13:44:20Z INFO Listener] Runner execution been cancelled.
+
+==> _diag/Runner_20260626-134427-utc.log <==
+[2026-06-26 13:44:28Z INFO Terminal] WRITE LINE: 
+[2026-06-26 13:44:28Z INFO Terminal] WRITE LINE: 
+[2026-06-26 13:44:28Z INFO RSAFileKeyManager] Loading RSA key parameters from file /Users/amitkapila/central-runner/.credentials_rsaparams
+[2026-06-26 13:44:28Z INFO RSAFileKeyManager] Loading RSA key parameters from file /Users/amitkapila/central-runner/.credentials_rsaparams
+[2026-06-26 13:44:28Z INFO GitHubActionsService] AAD Correlation ID for this token request: Unknown
+[2026-06-26 13:44:29Z INFO BrokerMessageListener] Session created.
+[2026-06-26 13:44:29Z INFO Runner] Successfully created session with migrated settings
+[2026-06-26 13:44:29Z INFO Terminal] WRITE LINE: Current runner version: '2.335.1'
+[2026-06-26 13:44:29Z INFO Terminal] WRITE LINE: 2026-06-26 13:44:29Z: Listening for Jobs
+[2026-06-26 13:44:29Z INFO JobDispatcher] Set runner/worker IPC timeout to 30 seconds.
+```
+
+**Decoding the Operational Telemetry Logs**
+While standard automation loops display voluminous .NET tracing stacks, the interaction sequence behaves perfectly normally under active load:
+The Intercept Sequence (SocketException (89) / TaskCanceledException):
+These warning logs are a standard indicator of high-performance long-polling lifecycle transitions. When a git push happens, the runner deliberately cancels its active background listening connection to instantly spin up a focused deployment channel (Runner.Worker). This structural cancellation is a sign of an active, responsive environment.
+The Success Benchmarks:
+The ultimate proof of system compilation and remote deployment execution success is validated directly inside the tracking frames.
+Look at that last line in the fresh log entry (`_diag/Runner_20260626-134427-utc.log`):
+`[2026-06-26 13:44:29Z INFO Terminal] WRITE LINE: 2026-06-26 13:44:29Z: Listening for Jobs`
+This confirms that your local self-hosted runner successfully re-established its handshake session with the GitHub Actions gateway. It recovered from the socket timeouts and is actively sitting in an Idle loop waiting to accept incoming build payloads.
 
 **Parsing the Pipeline Blueprints:**
 The runner reads your exact workflow orchestration file located at your repository root: `.github/workflows/deploy.yml`. This instructs the daemon to execute two key local phases:
